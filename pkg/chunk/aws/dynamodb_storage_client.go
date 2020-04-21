@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	awscommon "github.com/weaveworks/common/aws"
 	"github.com/weaveworks/common/instrument"
@@ -337,7 +338,7 @@ func (a dynamoDBStorageClient) query(ctx context.Context, query chunk.IndexQuery
 			sp.SetTag("tableName", query.TableName)
 			sp.SetTag("hashValue", query.HashValue)
 		}
-		return a.DynamoDB.QueryPagesWithContext(ctx, input, func(output *dynamodb.QueryOutput, _ bool) bool {
+		return a.DynamoDB.QueryPagesWithContext(innerCtx, input, func(output *dynamodb.QueryOutput, _ bool) bool {
 			pageCount++
 			if sp := ot.SpanFromContext(innerCtx); sp != nil {
 				sp.LogFields(otlog.Int("page", pageCount))
@@ -349,10 +350,10 @@ func (a dynamoDBStorageClient) query(ctx context.Context, query chunk.IndexQuery
 			}
 
 			return callback(&dynamoDBReadResponse{items: output.Items})
-		}, retryer.withRetrys, withErrorHandler(query.TableName, "DynamoDB.QueryPages"))
+		}, retryer.withRetries, withErrorHandler(query.TableName, "DynamoDB.QueryPages"))
 	})
 	if err != nil {
-		return fmt.Errorf("QueryPage error: table=%v, err=%v", query.TableName, err)
+		return errors.Wrapf(err, "QueryPages error: table=%v", query.TableName)
 	}
 	return err
 }

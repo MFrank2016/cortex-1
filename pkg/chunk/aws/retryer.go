@@ -26,17 +26,18 @@ func newRetryer(ctx context.Context, cfg util.BackoffConfig) *retryer {
 	}
 }
 
-func (r *retryer) withRetrys(req *request.Request) {
+func (r *retryer) withRetries(req *request.Request) {
 	req.Retryer = r
 }
 
 // RetryRules return the retry delay that should be used by the SDK before
 // making another request attempt for the failed request.
 func (r *retryer) RetryRules(req *request.Request) time.Duration {
+	duration := r.Backoff.NextDelay()
 	if sp := ot.SpanFromContext(req.Context()); sp != nil {
 		sp.LogFields(otlog.Int("retry", r.NumRetries()))
 	}
-	return r.Backoff.NextDelay()
+	return duration
 }
 
 // ShouldRetry returns if the failed request is retryable.
