@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/request"
 	ot "github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -42,8 +41,7 @@ func (r *retryer) RetryRules(req *request.Request) time.Duration {
 
 // ShouldRetry returns if the failed request is retryable.
 func (r *retryer) ShouldRetry(req *request.Request) bool {
-	var d client.DefaultRetryer
-	return d.ShouldRetry(req)
+	return req.IsErrorRetryable() || req.IsErrorThrottle()
 }
 
 // MaxRetries is the number of times a request may be retried before
