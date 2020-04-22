@@ -616,7 +616,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		}
 
 		numSeries++
-		wireChunks, err := toWireChunks(chunks, nil)
+		wireChunks, _, err := toWireChunks(chunks, nil, nil)
 		if err != nil {
 			return err
 		}

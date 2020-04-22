@@ -351,28 +351,36 @@ func (i *Ingester) TransferTSDB(stream client.Ingester_TransferTSDBServer) error
 	return nil
 }
 
-// The passed wireChunks slice is for re-use.
-func toWireChunks(descs []*desc, wireChunks []client.Chunk) ([]client.Chunk, error) {
+// The passed wireChunks and bufs slices are for re-use.
+func toWireChunks(descs []*desc, wireChunks []client.Chunk, bufs []bytes.Buffer) ([]client.Chunk, []bytes.Buffer, error) {
 	if cap(wireChunks) < len(descs) {
 		wireChunks = make([]client.Chunk, 0, len(descs))
 	}
+	if len(bufs) < len(descs) {
+		bufs = make([]bytes.Buffer, len(descs))
+	}
 	wireChunks = wireChunks[:0]
-	for _, d := range descs {
+	for i, d := range descs {
 		wireChunk := client.Chunk{
 			StartTimestampMs: int64(d.FirstTime),
 			EndTimestampMs:   int64(d.LastTime),
 			Encoding:         int32(d.C.Encoding()),
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, d.C.Size()))
+		buf := &bufs[i]
+		if buf.Len() < d.C.Size() {
+			*buf = *bytes.NewBuffer(make([]byte, 0, d.C.Size()))
+		} else {
+			buf.Reset()
+		}
 		if err := d.C.Marshal(buf); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		wireChunk.Data = buf.Bytes()
 		wireChunks = append(wireChunks, wireChunk)
 	}
-	return wireChunks, nil
+	return wireChunks, bufs, nil
 }
 
 func fromWireChunks(wireChunks []client.Chunk) ([]*desc, error) {
@@ -461,6 +469,7 @@ func (i *Ingester) transferOut(ctx context.Context) error {
 	}
 
 	var chunks []client.Chunk
+	var bufs []bytes.Buffer
 	for userID, state := range userStatesCopy {
 		for pair := range state.fpToSeries.iter() {
 			state.fpLocker.Lock(pair.fp)
@@ -470,7 +479,7 @@ func (i *Ingester) transferOut(ctx context.Context) error {
 				continue
 			}
 
-			chunks, err = toWireChunks(pair.series.chunkDescs, chunks)
+			chunks, bufs, err = toWireChunks(pair.series.chunkDescs, chunks, bufs)
 			if err != nil {
 				state.fpLocker.Unlock(pair.fp)
 				return errors.Wrap(err, "toWireChunks")

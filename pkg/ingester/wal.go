@@ -1,6 +1,7 @@
 package ingester
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -271,11 +272,12 @@ func (w *walWrapper) performCheckpoint(immediate bool) (err error) {
 		defer ticker.Stop()
 	}
 
-	var wireChunkBuf []client.Chunk
+	var wireChunks []client.Chunk
+	var bufs []bytes.Buffer
 	for userID, state := range us {
 		for pair := range state.fpToSeries.iter() {
 			state.fpLocker.Lock(pair.fp)
-			wireChunkBuf, err = w.checkpointSeries(checkpoint, userID, pair.fp, pair.series, wireChunkBuf)
+			wireChunks, bufs, err = w.checkpointSeries(checkpoint, userID, pair.fp, pair.series, wireChunks, bufs)
 			state.fpLocker.Unlock(pair.fp)
 			if err != nil {
 				return err
@@ -384,11 +386,11 @@ func (w *walWrapper) deleteCheckpoints(maxIndex int) (err error) {
 }
 
 // checkpointSeries write the chunks of the series to the checkpoint.
-func (w *walWrapper) checkpointSeries(cp *wal.WAL, userID string, fp model.Fingerprint, series *memorySeries, wireChunks []client.Chunk) ([]client.Chunk, error) {
+func (w *walWrapper) checkpointSeries(cp *wal.WAL, userID string, fp model.Fingerprint, series *memorySeries, wireChunks []client.Chunk, bufs []bytes.Buffer) ([]client.Chunk, []bytes.Buffer, error) {
 	var err error
-	wireChunks, err = toWireChunks(series.chunkDescs, wireChunks[:0])
+	wireChunks, bufs, err = toWireChunks(series.chunkDescs, wireChunks[:0], bufs)
 	if err != nil {
-		return wireChunks, err
+		return wireChunks, bufs, err
 	}
 
 	buf, err := proto.Marshal(&Series{
@@ -398,10 +400,10 @@ func (w *walWrapper) checkpointSeries(cp *wal.WAL, userID string, fp model.Finge
 		Chunks:      wireChunks,
 	})
 	if err != nil {
-		return wireChunks, err
+		return wireChunks, bufs, err
 	}
 
-	return wireChunks, cp.Log(buf)
+	return wireChunks, bufs, cp.Log(buf)
 }
 
 type walRecoveryParameters struct {
